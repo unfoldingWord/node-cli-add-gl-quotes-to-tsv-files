@@ -8,7 +8,7 @@
     "add-gl-quotes-to-tsv-files": "./add-gl-quotes-to-tsv-files-cli.js"
   },
   "files": [
-    "add-gl-quotes-to-tsv-files-cli.js",
+    "add-gl-quotes-to-tsv-files-cli.js"
   ],
   "keywords": [
     "cli",

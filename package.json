@@ -1,0 +1,31 @@
+{
+  "name": "add-gl-quotes-to-tsv-files",
+  "version": "1.0.0",
+  "description": "Add GL quotes to TSV files",
+  "main": "index.js",
+  "type": "module",
+  "bin": {
+    "add-gl-quotes-to-tsv-files": "./add-gl-quotes-to-tsv-files-cli.js"
+  },
+  "files": [
+    "add-gl-quotes-to-tsv-files-cli.js",
+    "index.js"
+  ],
+  "keywords": [
+    "cli",
+    "tsv",
+    "quotes"
+  ],
+  "author": "YOUR_NAME",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "YOUR_REPO_URL"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.10",
+    "js-yaml": "^4.1.0",
+    "tsv-quote-converters": "^1.0.0",
+    "yargs": "^17.7.2"
+  }
+}

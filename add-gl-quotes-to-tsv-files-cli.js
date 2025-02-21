@@ -13,18 +13,18 @@ const getGitInfo = () => {
   try {
     const remoteUrl = execSync('git remote get-url origin 2>/dev/null').toString().trim();
     const ownerRepo = remoteUrl.match(/[\/:]([^\/]+)\/([^\/]+?)(?:\.git)?$/);
-    const dcsUrl = remoteUrl.match(/(https*:\/\/[^\/]+)/) 
+    const dcsUrl = remoteUrl.match(/(https*:\/\/[^\/]+)/)
       ? remoteUrl.match(/(https*:\/\/[^\/]+)/)[1]
-      : remoteUrl.match(/@(.*?):/) 
-        ? `https://${remoteUrl.match(/@(.*?):/)[1]}`
-        : null;
+      : remoteUrl.match(/@(.*?):/)
+      ? `https://${remoteUrl.match(/@(.*?):/)[1]}`
+      : null;
     const ref = execSync('git symbolic-ref -q --short HEAD || git describe --tags --exact-match 2>/dev/null || git rev-parse --abbrev-ref HEAD').toString().trim();
-    
+
     return {
       owner: ownerRepo ? ownerRepo[1] : null,
       repo: ownerRepo ? ownerRepo[2] : null,
       ref,
-      dcsUrl
+      dcsUrl,
     };
   } catch (error) {
     return { owner: null, repo: null, ref: null, dcsUrl: null };
@@ -34,47 +34,52 @@ const getGitInfo = () => {
 const argv = yargs(hideBin(process.argv))
   .usage('Usage: $0 [options]')
   .options({
-    'w': {
+    w: {
       alias: 'workingdir',
       describe: 'Directory where the TSV files are located. Default is the current directory.',
       type: 'string',
     },
-    'owner': {
+    owner: {
       describe: 'Repository owner',
-      type: 'string'
+      type: 'string',
     },
-    'repo': {
+    repo: {
       describe: 'Repository name',
-      type: 'string'
+      type: 'string',
     },
-    'ref': {
+    ref: {
       describe: 'Git reference (branch/tag)',
-      type: 'string'
+      type: 'string',
     },
-    'dcs': {
+    dcs: {
       describe: 'DCS URL',
-      type: 'string'
+      type: 'string',
     },
-    'o': {
+    o: {
       alias: 'output',
       describe: "Output zip file's path",
-      type: 'string'
+      type: 'string',
     },
-    'q': {
+    q: {
       alias: 'quiet',
       describe: 'Suppress all output',
       type: 'boolean',
-      default: false
-    }
+      default: false,
+    },
+    v: {
+      alias: 'version',
+      describe: 'Show version number',
+      type: 'boolean',
+      global: true,
+    },
   })
   .epilogue(
     'Priority for parameters:\n' +
-    '1. Command line arguments\n' +
-    '2. GitHub Actions environment variables\n' +
-    '3. Git repository information\n\n' +
-    'If no path for the output zip file is specified, it will be generated as: <repo>_<ref>_with_gl_quotes.zip in the woring directory'
-  )
-  .argv;
+      '1. Command line arguments\n' +
+      '2. GitHub Actions environment variables\n' +
+      '3. Git repository information\n\n' +
+      'If no path for the output zip file is specified, it will be generated as: <repo>_<ref>_with_gl_quotes.zip in the woring directory'
+  ).argv;
 
 const log = (...args) => {
   if (!argv.quiet) console.log(...args);
@@ -108,6 +113,11 @@ log(`DCS URL: ${dcsUrl}`);
 log(`Output file path: ${zipFilePath}`);
 
 async function main() {
+  if (argv.version) {
+    const packageJson = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url)));
+    console.log(packageJson.version);
+    process.exit(0);
+  }
   try {
     if (workingdir && workingdir !== process.cwd()) {
       if (!fs.existsSync(argv.workingdir)) {
@@ -154,7 +164,7 @@ async function main() {
     if (!targetBible) {
       const excludeRelations = ['/ugnt', '/uhb', '/ta', '/tn', '/twl', '/tw', '/obs', '/obs-tn', '/obs-twl', '/sn', '/sq', '/tq'];
       for (const relation of relations) {
-        if (!excludeRelations.some(r => relation.includes(r))) {
+        if (!excludeRelations.some((r) => relation.includes(r))) {
           targetBible = relation;
           break;
         }
@@ -176,7 +186,7 @@ async function main() {
     if (tsvFiles.length === 0) {
       throw new Error('No TSV files found in working directory');
     }
-    
+
     const zip = new AdmZip();
 
     for (const file of tsvFiles) {
@@ -200,7 +210,6 @@ async function main() {
     // Write zip file
     zip.writeZip(zipFilePath);
     log(`Created ${zipFilePath}`);
-
   } catch (error) {
     console.error('Error:', error.message);
     process.exit(1);

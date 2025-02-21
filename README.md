@@ -17,6 +17,8 @@ add-gl-quotes-to-tsv-files [options]
 ### Options
 
 ```
+--help, -h         Show help
+--version, -v      Show version number
 --workingdir, -w   Directory where the TSV files are located (default: current directory)
 --owner            Repository owner
 --repo             Repository name

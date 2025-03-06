@@ -195,7 +195,7 @@ async function main() {
 
     for (const file of tsvFiles) {
       log(`Processing ${file}...`);
-      const bookCode = file.replace(/^tn_(.+)\.tsv$/, '$1').toLowerCase();
+      const bookCode = file.split('_')?.[1]?.toLowerCase() || file.toLowerCase().split('.')[0];
       const tsvContent = fs.readFileSync(file, 'utf8');
 
       const result = await addGLQuoteCols({

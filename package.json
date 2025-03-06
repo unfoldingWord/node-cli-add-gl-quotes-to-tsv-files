@@ -1,6 +1,6 @@
 {
   "name": "add-gl-quotes-to-tsv-files",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Add GL quotes to TSV files",
   "main": "index.js",
   "type": "module",
@@ -24,7 +24,7 @@
   "dependencies": {
     "adm-zip": "^0.5.10",
     "js-yaml": "^4.1.0",
-    "tsv-quote-converters": "^1.0.5",
+    "tsv-quote-converters": "^1.1.5",
     "yargs": "^17.7.2"
   }
 }

@@ -36,41 +36,39 @@ const argv = yargs(hideBin(process.argv))
   .options({
     w: {
       alias: 'workingdir',
-      describe: 'Directory where the TSV files are located. Default is the current directory.',
+      describe: 'Directory where the TSV files are located. (default:  current directory.)',
       type: 'string',
     },
     owner: {
-      describe: 'Repository owner',
+      describe: 'Repository owner. (default:  current checkedout repository owner or "unfoldingWord")',
       type: 'string',
     },
     repo: {
-      describe: 'Repository name',
+      describe: 'Repository name. (default:  current checkedout repository or the name of the current directory)',
       type: 'string',
     },
     ref: {
-      describe: 'Git reference (branch/tag)',
+      describe: 'Git reference (branch/tag). (default:  Current checkedout branch or tag, or "master")',
+      type: 'string',
+    },
+    bible: {
+      describe: 'Bible link to use for the GL quotes, e.g. unfoldingWord/en_ult/v84. (default:  {owner}/en_ult/{ref})',
       type: 'string',
     },
     dcs: {
-      describe: 'DCS URL',
+      describe: 'DCS URL. (default:  https://git.door43.org)',
       type: 'string',
     },
     o: {
       alias: 'output',
-      describe: "Output zip file's path",
+      describe: 'Output zip file\'s path. (default:  {workingdir}/{repo}_{ref}_with_gl_quotes.zip)',
       type: 'string',
     },
     q: {
       alias: 'quiet',
-      describe: 'Suppress all output',
+      describe: 'Suppress all output. (default: false)',
       type: 'boolean',
       default: false,
-    },
-    v: {
-      alias: 'version',
-      describe: 'Show version number',
-      type: 'boolean',
-      global: true,
     },
   })
   .epilogue(
@@ -92,11 +90,13 @@ const ghRepo = process.env.GITHUB_REPOSITORY?.split('/')[1];
 
 // Prioritize sources
 const workingdir = argv.workingdir || process.cwd();
-const owner = argv.owner || ghOwner || gitInfo.owner;
-const repo = argv.repo || ghRepo || gitInfo.repo;
-const ref = argv.ref || process.env.GITHUB_REF_NAME || gitInfo.ref;
-const dcsUrl = argv.dcs || process.env.GITHUB_SERVER_URL || gitInfo.dcsUrl;
+const owner = argv.owner || ghOwner || gitInfo.owner || 'unfoldingWord';
+const repo = argv.repo || ghRepo || gitInfo.repo || path.basename(process.cwd()) || 'unknown';
+const ref = argv.ref || process.env.GITHUB_REF_NAME || gitInfo.ref || 'master';
+const dcsUrl = argv.dcs || process.env.GITHUB_SERVER_URL || gitInfo.dcsUrl || 'https://git.door43.org';
+const targetBibleLink = argv.bible || process.env.BIBLE_LINK || getTargetBibleLink() || (owner === 'unfoldingWord' ? `${owner}/${repo.split('_')[0]}_ult/master` : `${owner}/${repo.split('_')[0]}_glt/master`);
 
+console.log('owner:', owner, 'repo:', repo, 'ref:', ref, 'dcsUrl:', dcsUrl, 'targetBibleLink:', targetBibleLink);
 if (!owner || !repo || !ref || !dcsUrl) {
   console.error('Error: Missing required parameters. Use --help for usage information.');
   process.exit(1);
@@ -109,27 +109,15 @@ log(`Working directory: ${workingdir}`);
 log(`Owner: ${owner}`);
 log(`Repo: ${repo}`);
 log(`Ref: ${ref}`);
+log(`TargetBibleLink: ${targetBibleLink}`)
 log(`DCS URL: ${dcsUrl}`);
 log(`Output file path: ${zipFilePath}`);
 
-async function main() {
-  if (argv.version) {
-    const packageJson = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url)));
-    console.log(packageJson.version);
-    process.exit(0);
-  }
-  try {
-    if (workingdir && workingdir !== process.cwd()) {
-      if (!fs.existsSync(argv.workingdir)) {
-        throw new Error(`Working directory ${argv.workingdir} does not exist`);
-      }
-      process.chdir(argv.workingdir);
-    }
-
+function getTargetBibleLink() {
     // Get manifest
     const manifestPath = path.join('manifest.yaml');
     if (!fs.existsSync(manifestPath)) {
-      throw new Error('manifest.yaml not found in working directory');
+      return null;
     }
     const manifest = yaml.load(fs.readFileSync(manifestPath, 'utf8'));
     const relationText = manifest.dublin_core.relation;
@@ -175,9 +163,25 @@ async function main() {
       throw new Error('manifest.yaml relation does not contain a Bible to use');
     }
 
-    const bibleLink = owner + '/' + targetBible.replace('/', '_').replace('?v=', '/v');
+    let bibleLink = `${owner}/${targetBible.replace('/', '_').replace('?v=', '/v')}`;
+
+    if (bibleLink.split('/').length === 2) {
+      bibleLink += '/master';
+    }
 
     log('Using Bible Link:', bibleLink);
+
+    return bibleLink;
+}
+
+async function main() {
+  try {
+    if (workingdir && workingdir !== process.cwd()) {
+      if (!fs.existsSync(argv.workingdir)) {
+        throw new Error(`Working directory ${argv.workingdir} does not exist`);
+      }
+      process.chdir(argv.workingdir);
+    }
 
     // Process files
     const files = fs.readdirSync('.');
@@ -195,7 +199,7 @@ async function main() {
       const tsvContent = fs.readFileSync(file, 'utf8');
 
       const result = await addGLQuoteCols({
-        bibleLinks: [bibleLink],
+        bibleLinks: [targetBibleLink],
         bookCode,
         tsvContent,
         isSourceLanguage: true,

@@ -20,11 +20,12 @@ add-gl-quotes-to-tsv-files [options]
 --help, -h         Show help
 --version, -v      Show version number
 --workingdir, -w   Directory where the TSV files are located (default: current directory)
---owner            Repository owner
---repo             Repository name
---ref              Git reference (branch/tag)
---dcs              DCS URL
---output, -o       Output zip file's path
+--owner            Repository owner (default: From git remote URL or unfoldingWord)
+--repo             Repository name (default: From git remote URL current directory's name)
+--ref              Git reference (git branch or tag or master)
+--bible            Bible link for GL Quotes (default: 1st aligned Bible in manfiest.yaml file relations or {owner}/en_ult/master)
+--dcs              DCS URL (defaut: https://git.door43.org)
+--output, -o       Output zip file's path (default: ./{repo}_{ref}_with_gl_quotes.zip)
 --quiet, -q        Suppress all output (default: false)
 ```
 
@@ -42,9 +43,7 @@ add-gl-quotes-to-tsv-files [options]
 
 If no output filename is specified for the zip file, it will be generated as: 
 
-`<repo>_<ref>_with_gl_quotes.zip`
-
-in the working directory
+`./<repo>_<ref>_with_gl_quotes.zip`
 
 #### Zip File's Contents
 

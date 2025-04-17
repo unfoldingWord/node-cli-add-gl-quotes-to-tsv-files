@@ -66,10 +66,16 @@ const argv = yargs(hideBin(process.argv))
     },
     q: {
       alias: 'quiet',
-      describe: 'Suppress all output. (default: false)',
+      describe: 'Suppress ALL output, even simple info lines. (default: false)',
       type: 'boolean',
       default: false,
     },
+    v: {
+      alias: 'verbose',
+      describe: 'Enable verbose output. Will output everything being aligned. (default: false)',
+      type: 'boolean',
+      default: false,
+    }
   })
   .epilogue(
     'Priority for parameters:\n' +
@@ -80,7 +86,7 @@ const argv = yargs(hideBin(process.argv))
   ).argv;
 
 const log = (...args) => {
-  if (!argv.quiet) console.log(...args);
+  if (!argv.quiet || verbose) console.log(...args);
 };
 
 // Get info from different sources
@@ -96,7 +102,7 @@ const ref = argv.ref || process.env.GITHUB_REF_NAME || gitInfo.ref || 'master';
 const dcsUrl = argv.dcs || process.env.GITHUB_SERVER_URL || gitInfo.dcsUrl || 'https://git.door43.org';
 const targetBibleLink = argv.bible || process.env.BIBLE_LINK || getTargetBibleLink() || (owner === 'unfoldingWord' ? `${owner}/${repo.split('_')[0]}_ult/master` : `${owner}/${repo.split('_')[0]}_glt/master`);
 
-console.log('owner:', owner, 'repo:', repo, 'ref:', ref, 'dcsUrl:', dcsUrl, 'targetBibleLink:', targetBibleLink);
+log('owner:', owner, 'repo:', repo, 'ref:', ref, 'dcsUrl:', dcsUrl, 'targetBibleLink:', targetBibleLink);
 if (!owner || !repo || !ref || !dcsUrl) {
   console.error('Error: Missing required parameters. Use --help for usage information.');
   process.exit(1);
@@ -205,10 +211,12 @@ async function main() {
         isSourceLanguage: true,
         trySeparatorsAndOccurrences: true,
         dcsUrl: dcsUrl,
-        quiet: argv.quiet,
+        quiet: quiet && !verbose,
       };
 
-      // console.log(params);
+      if (verbose) {
+        log(params);
+      }
 
       const result = await addGLQuoteCols(params);
 

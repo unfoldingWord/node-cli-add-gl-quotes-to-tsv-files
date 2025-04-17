@@ -198,7 +198,7 @@ async function main() {
       const bookCode = (file.split('_')?.[1]?.toLowerCase() || file.toLowerCase()).split('.')[0];
       const tsvContent = fs.readFileSync(file, 'utf8');
 
-      const result = await addGLQuoteCols({
+      const params = {
         bibleLinks: [targetBibleLink],
         bookCode,
         tsvContent,
@@ -206,7 +206,11 @@ async function main() {
         trySeparatorsAndOccurrences: true,
         dcsUrl: dcsUrl,
         quiet: argv.quiet,
-      });
+      };
+
+      // console.log(params);
+
+      const result = await addGLQuoteCols(params);
 
       zip.addFile(file, Buffer.from(result.output, 'utf8'));
     }

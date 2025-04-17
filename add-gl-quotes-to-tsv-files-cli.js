@@ -117,6 +117,8 @@ log(`Repo: ${repo}`);
 log(`Ref: ${ref}`);
 log(`TargetBibleLink: ${targetBibleLink}`)
 log(`DCS URL: ${dcsUrl}`);
+log('Quiet mode:', argv.quiet);
+log('Verbose mode:', argv.verbose);
 log(`Output file path: ${zipFilePath}`);
 
 function getTargetBibleLink() {

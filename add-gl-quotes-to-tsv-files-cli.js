@@ -61,7 +61,7 @@ const argv = yargs(hideBin(process.argv))
     },
     o: {
       alias: 'output',
-      describe: 'Output zip file\'s path. (default:  {workingdir}/{repo}_{ref}_with_gl_quotes.zip)',
+      describe: "Output zip file's path. (default:  {workingdir}/{repo}_{ref}_with_gl_quotes.zip)",
       type: 'string',
     },
     q: {
@@ -75,6 +75,12 @@ const argv = yargs(hideBin(process.argv))
       describe: 'Enable verbose output. Will output everything being aligned. (default: false)',
       type: 'boolean',
       default: false,
+    },
+    e: {
+      alias: 'exit-on-error',
+      describe: 'Exit on error. If there are any errors with the TSV file or loading a Bible book, the script should stop instantly and not make a zip file. (default: false)',
+      type: 'boolean',
+      default: false,
     }
   })
   .epilogue(
@@ -86,7 +92,7 @@ const argv = yargs(hideBin(process.argv))
   ).argv;
 
 const log = (...args) => {
-  if (!argv.quiet || verbose) console.log(...args);
+  if (!argv.quiet || argv.verbose) console.log(...args);
 };
 
 // Get info from different sources
@@ -100,7 +106,11 @@ const owner = argv.owner || ghOwner || gitInfo.owner || 'unfoldingWord';
 const repo = argv.repo || ghRepo || gitInfo.repo || path.basename(process.cwd()) || 'unknown';
 const ref = argv.ref || process.env.GITHUB_REF_NAME || gitInfo.ref || 'master';
 const dcsUrl = argv.dcs || process.env.GITHUB_SERVER_URL || gitInfo.dcsUrl || 'https://git.door43.org';
-const targetBibleLink = argv.bible || process.env.BIBLE_LINK || getTargetBibleLink() || (owner === 'unfoldingWord' ? `${owner}/${repo.split('_')[0]}_ult/master` : `${owner}/${repo.split('_')[0]}_glt/master`);
+const targetBibleLink =
+  argv.bible ||
+  process.env.BIBLE_LINK ||
+  getTargetBibleLink() ||
+  (owner === 'unfoldingWord' ? `${owner}/${repo.split('_')[0]}_ult/master` : `${owner}/${repo.split('_')[0]}_glt/master`);
 
 log('owner:', owner, 'repo:', repo, 'ref:', ref, 'dcsUrl:', dcsUrl, 'targetBibleLink:', targetBibleLink);
 if (!owner || !repo || !ref || !dcsUrl) {
@@ -115,74 +125,98 @@ log(`Working directory: ${workingdir}`);
 log(`Owner: ${owner}`);
 log(`Repo: ${repo}`);
 log(`Ref: ${ref}`);
-log(`TargetBibleLink: ${targetBibleLink}`)
+log(`TargetBibleLink: ${targetBibleLink}`);
 log(`DCS URL: ${dcsUrl}`);
 log('Quiet mode:', argv.quiet);
 log('Verbose mode:', argv.verbose);
+log('Exit on error:', argv.exitOnError);
 log(`Output file path: ${zipFilePath}`);
 
 function getTargetBibleLink() {
-    // Get manifest
-    const manifestPath = path.join('manifest.yaml');
-    if (!fs.existsSync(manifestPath)) {
-      return null;
+  // Get manifest
+  const manifestPath = path.join('manifest.yaml');
+  if (!fs.existsSync(manifestPath)) {
+    return null;
+  }
+  const manifest = yaml.load(fs.readFileSync(manifestPath, 'utf8'));
+  const relationText = manifest.dublin_core.relation;
+
+  // Convert to array if it's a string
+  const relations = Array.isArray(relationText) ? relationText : [relationText];
+
+  let targetBible = null;
+  // Find the first matching Bible
+  for (const relation of relations) {
+    if (relation.includes('/glt')) {
+      targetBible = relation;
+      break;
     }
-    const manifest = yaml.load(fs.readFileSync(manifestPath, 'utf8'));
-    const relationText = manifest.dublin_core.relation;
-
-    // Convert to array if it's a string
-    const relations = Array.isArray(relationText) ? relationText : [relationText];
-
-    let targetBible = null;
-    // Find the first matching Bible
+  }
+  if (!targetBible) {
     for (const relation of relations) {
-      if (relation.includes('/glt')) {
+      if (relation.includes('/gst')) {
         targetBible = relation;
         break;
       }
     }
-    if (!targetBible) {
-      for (const relation of relations) {
-        if (relation.includes('/gst')) {
-          targetBible = relation;
-          break;
-        }
+  }
+  if (!targetBible) {
+    for (const relation of relations) {
+      if (relation.includes('/ult')) {
+        targetBible = relation;
+        break;
       }
     }
-    if (!targetBible) {
-      for (const relation of relations) {
-        if (relation.includes('/ult')) {
-          targetBible = relation;
-          break;
-        }
+  }
+  if (!targetBible) {
+    const excludeRelations = ['/ugnt', '/uhb', '/ta', '/tn', '/twl', '/tw', '/obs', '/obs-tn', '/obs-twl', '/sn', '/sq', '/tq'];
+    for (const relation of relations) {
+      if (!excludeRelations.some((r) => relation.includes(r))) {
+        targetBible = relation;
+        break;
       }
     }
-    if (!targetBible) {
-      const excludeRelations = ['/ugnt', '/uhb', '/ta', '/tn', '/twl', '/tw', '/obs', '/obs-tn', '/obs-twl', '/sn', '/sq', '/tq'];
-      for (const relation of relations) {
-        if (!excludeRelations.some((r) => relation.includes(r))) {
-          targetBible = relation;
-          break;
-        }
-      }
+  }
+
+  if (!targetBible) {
+    throw new Error('manifest.yaml relation does not contain a Bible to use');
+  }
+
+  let bibleLink = `${owner}/${targetBible.replace('/', '_').replace('?v=', '/v')}`;
+
+  if (bibleLink.split('/').length === 2) {
+    bibleLink += '/master';
+  }
+
+  log('Using Bible Link:', bibleLink);
+
+  return bibleLink;
+}
+
+function writeErrorsToFile(errors) {
+  if (!errors || errors.length === 0) {
+    return;
+  }
+  
+  try {
+    const errorData = {
+      timestamp: new Date().toISOString(),
+      errors: errors
+    };
+    
+    const errorFilePath = path.join(workingdir, 'errors.json');
+    fs.writeFileSync(errorFilePath, JSON.stringify(errorData, null, 2), 'utf8');
+    
+    if (!argv.quiet) {
+      console.log(`Errors written to ${errorFilePath}`);
     }
-
-    if (!targetBible) {
-      throw new Error('manifest.yaml relation does not contain a Bible to use');
-    }
-
-    let bibleLink = `${owner}/${targetBible.replace('/', '_').replace('?v=', '/v')}`;
-
-    if (bibleLink.split('/').length === 2) {
-      bibleLink += '/master';
-    }
-
-    log('Using Bible Link:', bibleLink);
-
-    return bibleLink;
+  } catch (error) {
+    console.error('Failed to write errors to file:', error.message);
+  }
 }
 
 async function main() {
+  const errors = [];
   try {
     if (workingdir && workingdir !== process.cwd()) {
       if (!fs.existsSync(argv.workingdir)) {
@@ -213,14 +247,66 @@ async function main() {
         isSourceLanguage: true,
         trySeparatorsAndOccurrences: true,
         dcsUrl: dcsUrl,
-        quiet: quiet && !verbose,
+        quiet: argv.quiet || !argv.verbose,
       };
 
-      if (verbose) {
+      if (argv.verbose) {
         log(params);
       }
 
-      const result = await addGLQuoteCols(params);
+      let result;
+      try {
+        result = await addGLQuoteCols(params);
+      } catch (error) {
+        // Handle error from addGLQuoteCols
+        if (argv.exitOnError) {
+          console.error(`Error processing ${file} with addGLQuoteCols:`, error.message);
+          errors.push({ file, error: error.message });
+          writeErrorsToFile(errors);
+          console.error('Exiting due to errors and --exit-on-error flag');
+          process.exit(1);
+        }
+
+        console.error(`Error processing ${file} with addGLQuoteCols:`, error.message);
+        errors.push({ file, error: error.message });
+
+        try {
+          // Fallback: Manually add GLQuote columns to TSV
+          log(`Falling back to manual TSV processing for ${file}...`);
+
+          // Read and parse the TSV
+          const rows = tsvContent.split('\n').map((line) => line.split('\t'));
+          const headers = rows[0];
+
+          // Find the Occurrence column index
+          const occurrenceIndex = headers.findIndex((h) => h === 'Occurrence');
+
+          if (occurrenceIndex !== -1) {
+            // Add new headers after the Occurrence column
+            headers.splice(occurrenceIndex + 1, 0, 'GLQuote', 'GLQuote Occurrence');
+
+            // Add empty values for the new columns in all data rows
+            for (let i = 1; i < rows.length; i++) {
+              if (rows[i].length > 1) {
+                // Skip empty rows
+                rows[i].splice(occurrenceIndex + 1, 0, '', '0');
+              }
+            }
+
+            // Convert back to TSV
+            result = {
+              output: rows.map((row) => row.join('\t')).join('\n'),
+            };
+          } else {
+            // If Occurrence column not found, just use original content
+            log(`Couldn't find 'Occurrence' column in ${file}, using original content`);
+            result = { output: tsvContent };
+          }
+        } catch (parseError) {
+          console.error(`Error manually processing ${file}:`, parseError.message);
+          result = { output: tsvContent }; // Use original content
+        }
+      }
 
       zip.addFile(file, Buffer.from(result.output, 'utf8'));
     }
@@ -228,8 +314,13 @@ async function main() {
     // Write zip file
     zip.writeZip(zipFilePath);
     log(`Created ${zipFilePath}`);
+
+    if(errors.length > 0) {
+      writeErrorsToFile(errors);
+    }
   } catch (error) {
     console.error('Error:', error.message);
+    writeErrorsToFile([{ file: '', error: error.message }]);  
     process.exit(1);
   }
 }

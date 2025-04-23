@@ -42,9 +42,9 @@ jobs:
           context: .
           push: true
           tags: |
-            richmahn/add-gl-quotes-to-tsv-files:latest
-            richmahn/add-gl-quotes-to-tsv-files:${{ env.VERSION }}
-            richmahn/add-gl-quotes-to-tsv-files:${{ env.MAJOR }}
-            richmahn/add-gl-quotes-to-tsv-files:${{ env.MAJOR }}.${{ env.MINOR }}
-          cache-from: type=registry,ref=richmahn/add-gl-quotes-to-tsv-files:latest
+            unfoldingword/add-gl-quotes-to-tsv-files:latest
+            unfoldingword/add-gl-quotes-to-tsv-files:${{ env.VERSION }}
+            unfoldingword/add-gl-quotes-to-tsv-files:${{ env.MAJOR }}
+            unfoldingword/add-gl-quotes-to-tsv-files:${{ env.MAJOR }}.${{ env.MINOR }}
+          cache-from: type=registry,ref=unfoldingword/add-gl-quotes-to-tsv-files:latest
           cache-to: type=inline

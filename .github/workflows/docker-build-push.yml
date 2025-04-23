@@ -1,0 +1,50 @@
+name: Build and Push Docker Image
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+jobs:
+  docker:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      
+      - name: Extract version from tag
+        id: get_version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          MAJOR=$(echo $VERSION | cut -d. -f1)
+          MINOR=$(echo $VERSION | cut -d. -f2)
+          echo "MAJOR=$MAJOR" >> $GITHUB_ENV
+          echo "MINOR=$MINOR" >> $GITHUB_ENV
+          echo "TAG_VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "TAG_MAJOR=$MAJOR" >> $GITHUB_OUTPUT
+          echo "TAG_MINOR=$MAJOR.$MINOR" >> $GITHUB_OUTPUT
+      
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      
+      - name: Build and push
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: |
+            richmahn/add-gl-quotes-to-tsv-files:latest
+            richmahn/add-gl-quotes-to-tsv-files:${{ env.VERSION }}
+            richmahn/add-gl-quotes-to-tsv-files:${{ env.MAJOR }}
+            richmahn/add-gl-quotes-to-tsv-files:${{ env.MAJOR }}.${{ env.MINOR }}
+          cache-from: type=registry,ref=richmahn/add-gl-quotes-to-tsv-files:latest
+          cache-to: type=inline

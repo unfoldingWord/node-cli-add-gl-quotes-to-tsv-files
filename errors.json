@@ -1,0 +1,9 @@
+{
+  "timestamp": "2025-06-12T15:42:07.581Z",
+  "errors": [
+    {
+      "file": "",
+      "error": "No TSV files found in working directory"
+    }
+  ]
+}

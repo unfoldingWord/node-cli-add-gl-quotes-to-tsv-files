@@ -8,6 +8,15 @@ import yaml from 'js-yaml';
 import { execSync } from 'child_process';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
+import { BibleBookData } from './books.js';
+import * as usfm from 'usfm-js';
+import * as axios from 'axios';
+import fetch from 'node-fetch';
+import { createHash } from 'crypto';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import dotenv from 'dotenv';
+import { parse } from 'csv-parse/sync';
 
 const getGitInfo = () => {
   try {
@@ -16,8 +25,8 @@ const getGitInfo = () => {
     const dcsUrl = remoteUrl.match(/(https*:\/\/[^\/]+)/)
       ? remoteUrl.match(/(https*:\/\/[^\/]+)/)[1]
       : remoteUrl.match(/@(.*?):/)
-      ? `https://${remoteUrl.match(/@(.*?):/)[1]}`
-      : null;
+        ? `https://${remoteUrl.match(/@(.*?):/)[1]}`
+        : null;
     const ref = execSync('git symbolic-ref -q --short HEAD || git describe --tags --exact-match 2>/dev/null || git rev-parse --abbrev-ref HEAD').toString().trim();
 
     return {
@@ -85,10 +94,10 @@ const argv = yargs(hideBin(process.argv))
   })
   .epilogue(
     'Priority for parameters:\n' +
-      '1. Command line arguments\n' +
-      '2. GitHub Actions environment variables\n' +
-      '3. Git repository information\n\n' +
-      'If no path for the output zip file is specified, it will be generated as: <repo>_<ref>_with_gl_quotes.zip in the woring directory'
+    '1. Command line arguments\n' +
+    '2. GitHub Actions environment variables\n' +
+    '3. Git repository information\n\n' +
+    'If no path for the output zip file is specified, it will be generated as: <repo>_<ref>_with_gl_quotes.zip in the woring directory'
   ).argv;
 
 const log = (...args) => {
@@ -97,6 +106,9 @@ const log = (...args) => {
 
 // Get info from different sources
 const gitInfo = getGitInfo();
+// Load environment variables from .env file
+dotenv.config();
+
 const ghOwner = process.env.GITHUB_REPOSITORY?.split('/')[0];
 const ghRepo = process.env.GITHUB_REPOSITORY?.split('/')[1];
 
@@ -119,6 +131,20 @@ if (!owner || !repo || !ref || !dcsUrl) {
 }
 
 const zipFilePath = argv.output || `${repo}_${ref}_with_gl_quotes.zip`;
+
+const awsAccessKeyId = process.env.AWS_ACCESS_KEY_ID;
+const awsSecretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+const awsRegion = process.env.AWS_REGION || 'us-west-2'; // Default region
+const tableName = process.env.DYNAMODB_TABLE || 'GLQuotes';
+    
+// Initialize DynamoDB client with credentials from environment variables
+const docClient = new DynamoDBClient({ 
+  region: awsRegion,
+  credentials: {
+    accessKeyId: awsAccessKeyId,
+    secretAccessKey: awsSecretAccessKey,
+  }
+});
 
 log('Using the following settings:\n');
 log(`Working directory: ${workingdir}`);
@@ -197,21 +223,163 @@ function writeErrorsToFile(errors) {
   if (!errors || errors.length === 0) {
     return;
   }
-  
+
   try {
     const errorData = {
       timestamp: new Date().toISOString(),
       errors: errors
     };
-    
+
     const errorFilePath = path.join(workingdir, 'errors.json');
     fs.writeFileSync(errorFilePath, JSON.stringify(errorData, null, 2), 'utf8');
-    
+
     if (!argv.quiet) {
       console.log(`Errors written to ${errorFilePath}`);
     }
   } catch (error) {
     console.error('Failed to write errors to file:', error.message);
+  }
+}
+
+/**
+ * Gets the SHA of each chapter for a specific Bible book from DCS for a given Bible link.
+ * @param {string} usfmConten - the USFM content as a string
+ * @returns {object} - The keyed by chapter SHAs
+ */
+function getChapterShas(usfmContent) {
+  try {
+    const chapters = usfm.toJSON(usfmContent).chapters;
+    const shas = {};
+    Object.keys(chapters).forEach(chapterNumber => {
+      if (!isNaN(parseInt(chapterNumber))) {
+        shas[chapterNumber] = createHash('sha256').update(JSON.stringify(chapters[chapterNumber])).digest('hex');
+      }
+    });
+
+    return shas;
+  } catch (error) {
+    console.error(`Error converting USFM content to json:`, error.message);
+    return;
+  }
+}
+
+/**
+ * Fetches the USFM content for a specific Bible book from DCS
+ * @param {string} bibleLink - The Bible link in format "owner/repo/ref"
+ * @param {string} bookId - The book ID (e.g., 'gen', 'exo', 'mat')
+ * @returns {Promise<string>} - The USFM content as a string, or empty string if not found
+ */
+async function fetchUsfmContent(bibleLink, bookId) {
+  try {
+    // Validate inputs
+    if (!bibleLink || !bookId || !dcsUrl) {
+      console.error('Missing required parameters for fetchUsfmContent');
+      return '';
+    }
+
+    if (!BibleBookData[bookId]) {
+      console.error(`Unknown book ID: ${bookId}`);
+      return '';
+    }
+
+    // Parse the Bible link
+    const parts = bibleLink.split('/');
+    const owner = parts[0];
+    const repo = parts[1];
+    const ref = parts[2] || 'master';
+
+    // Construct the API URL
+    const usfmFileName = `${BibleBookData[bookId].usfm}.usfm`;
+    const apiUrl = `${dcsUrl}/api/v1/repos/${owner}/${repo}/contents/${usfmFileName}?ref=${ref}`;
+    
+    if (argv.verbose) {
+      log(`Fetching USFM content from: ${apiUrl}`);
+    }
+
+    // Fetch the content
+    const response = await fetch(apiUrl);
+    
+    if (!response.ok) {
+      if (argv.verbose) {
+        log(`Failed to fetch USFM content for ${bookId}: ${response.status} ${response.statusText}`);
+      }
+      return '';
+    }
+
+    const data = await response.json();
+    
+    if (!data || !data.content) {
+      return '';
+    }
+
+    // Decode base64 content
+    const content = Buffer.from(data.content, 'base64').toString('utf-8');
+    return content;
+  } catch (error) {
+    console.error(`Error fetching USFM content for ${bookId}:`, error.message);
+    return '';
+  }
+}
+
+/**
+ * 
+ * @param {object} item 
+ */
+async function putGLQuoteRowToDynamoDB(item) {
+    if (!awsAccessKeyId || !awsSecretAccessKey) {
+      if (argv.verbose) {
+        log('AWS credentials not found in environment variables. Skipping DynamoDB put.');
+      }
+      return null;
+    }
+
+    // Insert the new quote
+    const putParams = {
+      TableName: tableName,
+      Item: item,
+    };
+
+    console.log(putParams);
+          
+    console.log(`Inserted quote for ${item.Book} ${item.Reference} into DynamoDB`);
+    await docClient.send(new PutCommand(putParams));
+}
+
+/**
+ * Query DynamoDB table for Bible book content using AWS credentials from environment variables
+ * @param {string} bibleLink - The Bible link in format "owner/repo/ref" (used as partition key)
+ * @param {string} bookId - The book ID (e.g., 'gen', 'exo', 'mat') (used as sort key)
+ * @returns {Promise<Object|null>} - The DynamoDB item containing the book data, or null if not found
+ */
+async function queryDynamoDBForBook(bibleLink, bookId) {
+  try {
+    if (!awsAccessKeyId || !awsSecretAccessKey) {
+      if (argv.verbose) {
+        log('AWS credentials not found in environment variables. Skipping DynamoDB query.');
+      }
+      return null;
+    }
+
+    // Construct the command to get the item
+    const command = new QueryCommand({
+      TableName: tableName,
+      KeyConditionExpression: 'OwnerRepoRef = :orr AND Book = :book',
+      ExpressionAttributeValues: { ':orr': bibleLink, ':book': bookId }
+    });
+
+    if (argv.verbose) {
+      log(`Querying DynamoDB for PK: ${bibleLink}, SK: ${bookId}`);
+    }
+
+    // Execute the command
+    const response = await docClient.send(command);
+
+    // Return the item if found, otherwise null
+    return response.Items || null;
+  } catch (error) {
+    console.error(`Error querying DynamoDB for ${bibleLink}/${bookId}:`, error.message);
+    console.log(error);
+    return null;
   }
 }
 
@@ -239,6 +407,20 @@ async function main() {
       log(`Processing ${file}...`);
       const bookCode = (file.split('_')?.[1]?.toLowerCase() || file.toLowerCase()).split('.')[0];
       const tsvContent = fs.readFileSync(file, 'utf8');
+
+      const sourceUsfmContent = await fetchUsfmContent(BibleBookData[bookCode].testament == "old" ? "unfoldingWord/hbo_uhb" : "unfoldingWord/el-x-koine_ugnt", bookCode, dcsUrl);
+      const sourceChapterShas = getChapterShas(sourceUsfmContent);
+
+      const targetUsfmContent = await fetchUsfmContent(targetBibleLink, bookCode);
+      const targetChapterShas = await getChapterShas(targetUsfmContent);
+
+      const cachedGLQuotes = await queryDynamoDBForBook(targetBibleLink, bookCode);
+      console.log(cachedGLQuotes)
+
+      if (argv.verbose) {
+        log("Source chapter SHAs:", sourceChapterShas);
+        log("Target chapter SHAs:", targetChapterShas);
+      }
 
       const params = {
         bibleLinks: [targetBibleLink],
@@ -308,19 +490,55 @@ async function main() {
         }
       }
 
+      const tsvRecords = parse(result.output, {
+        columns: true,
+        delimiter: '\t',
+        quote: '',
+        skip_empty_lines: true,
+      });
+
+      for(let record of tsvRecords) {
+        if (record['GLQuote'] && record['GLQuote'] !== '') {
+          const chapter = record['Reference'].split(':')[0].split('-')[0];
+          if (targetChapterShas[chapter] && sourceChapterShas[chapter]) {
+            GLQuotesRow = {
+              OwnerRepoRef: owner + '/' + repo + '/' + ref,
+              Book: bookCode,
+              Owner: owner,
+              Repo: repo,
+              Ref: ref,
+              Language: repo.split('_')[0], 
+              Reference: record['Reference'],
+              Quote: record['Quote'],
+              Occurrence: record['Occurrence'],
+              GLQuote: record['GLQuote'],
+              GLOccurrence: record['GLOccurrence'],
+              Chapter: chapter,
+              SHA: sourceChapterShas[chapter],
+              GLSHA: targetChapterShas[chapter],
+              CreatedAt: new Date().toISOString(),
+            }
+
+            await putGLQuoteRowToDynamoDB(GLQuotesRow);
+          }              
+        }
+      }
+
       zip.addFile(file, Buffer.from(result.output, 'utf8'));
+      process.exit(0);
     }
 
     // Write zip file
     zip.writeZip(zipFilePath);
     log(`Created ${zipFilePath}`);
 
-    if(errors.length > 0) {
+    if (errors.length > 0) {
       writeErrorsToFile(errors);
     }
   } catch (error) {
     console.error('Error:', error.message);
-    writeErrorsToFile([{ file: '', error: error.message }]);  
+    console.log(error);
+    writeErrorsToFile([{ file: '', error: error.message }]);
     process.exit(1);
   }
 }

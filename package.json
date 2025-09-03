@@ -22,9 +22,14 @@
     "url": "YOUR_REPO_URL"
   },
   "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.812.0",
+    "@aws-sdk/lib-dynamodb": "^3.812.0",
     "adm-zip": "^0.5.10",
+    "dotenv": "^16.5.0",
     "js-yaml": "^4.1.0",
-    "tsv-quote-converters": "^1.1.7",
+    "node-fetch": "^3.3.2",
+    "tsv-quote-converters": "^1.1.8",
+    "usfm-js": "^3.4.3",
     "yargs": "^17.7.2"
   }
 }

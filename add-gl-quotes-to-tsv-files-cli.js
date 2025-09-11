@@ -68,6 +68,10 @@ const argv = yargs(hideBin(process.argv))
       type: 'string',
       default: 'https://qa.door43.org',
     },
+    'backup-artifact-url': {
+      describe: 'Backup artifact zip URL to use if no artifact is found via the artifacts API. Defaults to https://cdn.door43.org/dcs/<repo>_master_with_gl_quotes.zip',
+      type: 'string',
+    },
     o: {
       alias: 'output',
       describe: "Output zip file's path. (default:  {workingdir}/{repo}_{ref}_with_gl_quotes.zip)",
@@ -160,6 +164,11 @@ const regenerateAll = argv['regenerate'] || argv['rerender'];
 // Normalize artifacts base URL (strip trailing slashes)
 const artifactsBaseUrl = (argv['artifacts-base-url'] || 'https://qa.door43.org').replace(/\/+$/, '');
 
+// Compute backup artifact URL (default depends on repo name)
+const backupArtifactUrl = (argv['backup-artifact-url'] && argv['backup-artifact-url'].trim().length > 0)
+  ? argv['backup-artifact-url']
+  : `https://cdn.door43.org/dcs/${repo}_master_with_gl_quotes.zip`;
+
 log('owner:', owner, 'repo:', repo, 'ref:', ref, 'dcsUrl:', dcsUrl, 'targetBibleLink:', targetBibleLink);
 if (!owner || !repo || !ref || !dcsUrl) {
   console.error('Error: Missing required parameters. Use --help for usage information.');
@@ -175,6 +184,7 @@ log(`Repo: ${repo}`);
 log(`Ref: ${ref}`);
 log(`TargetBibleLink: ${targetBibleLink}`);
 log(`DCS URL: ${dcsUrl}`);
+log(`Backup artifact URL: ${backupArtifactUrl}`);
 log('Quiet mode:', argv.quiet);
 log('Verbose mode:', argv.verbose);
 log('Exit on error:', argv.exitOnError);
@@ -347,7 +357,13 @@ async function getPreviousGLQuotes(fileName, repo) {
       cache.urlPromise = null;
     }
 
-    const zipUrl = cache.zipUrl;
+    // Fallback to backup artifact URL if discovery failed
+    let zipUrl = cache.zipUrl;
+    if (!zipUrl) {
+      if (argv.verbose || argv.debug) console.log(`No artifact URL discovered for ${repo}; falling back to backup URL: ${backupArtifactUrl}`);
+      zipUrl = backupArtifactUrl;
+      cache.zipUrl = zipUrl; // cache the fallback to avoid re-evaluating
+    }
     if (!zipUrl) {
       if (argv.verbose || argv.debug) console.log(`No artifact zip URL available for repo ${repo}`);
       return null;

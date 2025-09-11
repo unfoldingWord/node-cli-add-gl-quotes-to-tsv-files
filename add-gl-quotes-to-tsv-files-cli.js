@@ -306,7 +306,7 @@ async function getPreviousGLQuotes(fileName, repo) {
         // Pick the newest artifact by highest id or latest created_at
         const candidates = artifacts.filter(a =>
           typeof a?.name === 'string' &&
-          a.name.endsWith('_with_gl_quotes.zip') &&
+          a.name.endsWith('master_with_gl_quotes.zip') &&
           a?.archive_download_url &&
           a?.expired === false
         );

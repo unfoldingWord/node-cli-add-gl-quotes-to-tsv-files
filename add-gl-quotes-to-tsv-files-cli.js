@@ -64,9 +64,9 @@ const argv = yargs(hideBin(process.argv))
       type: 'string',
     },
     'artifacts-base-url': {
-      describe: 'Base URL for artifacts API (e.g., https://qa.door43.org or https://git.door43.org). Defaults to QA.',
+      describe: 'Base URL for artifacts API (e.g., https://git.door43.org or https://git.door43.org). Defaults to QA.',
       type: 'string',
-      default: 'https://qa.door43.org',
+      default: 'https://git.door43.org',
     },
     'backup-artifact-url': {
       describe: 'Backup artifact zip URL to use if no artifact is found via the artifacts API. Defaults to https://cdn.door43.org/dcs/<repo>_master_with_gl_quotes.zip',
@@ -162,7 +162,7 @@ const targetBibleLink =
 const regenerateAll = argv['regenerate'] || argv['rerender'];
 
 // Normalize artifacts base URL (strip trailing slashes)
-const artifactsBaseUrl = (argv['artifacts-base-url'] || 'https://qa.door43.org').replace(/\/+$/, '');
+const artifactsBaseUrl = (argv['artifacts-base-url'] || 'https://git.door43.org').replace(/\/+$/, '');
 
 // Compute backup artifact URL (default depends on repo name)
 const backupArtifactUrl = (argv['backup-artifact-url'] && argv['backup-artifact-url'].trim().length > 0)

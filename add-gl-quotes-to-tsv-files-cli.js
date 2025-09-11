@@ -472,7 +472,9 @@ async function mergePreviousGLQuotes(tsvContent, fileName, repo) {
         for (let i = 1; i < currentRows.length; i++) {
           const row = currentRows[i];
           if (row.length > 1) {
-            if (row[quoteIndex]?.trim() && row[occurrenceIndex]?.trim() && row[occurrenceIndex] != "0" && !row[glQuoteIndex]?.trim()) {
+            const quoteHasQNF = row[quoteIndex]?.includes('QUOTE_NOT_FOUND');
+            const glqMissingOrQNF = (!row[glQuoteIndex]?.trim() || row[glQuoteIndex].includes('QUOTE_NOT_FOUND'));
+            if (row[quoteIndex]?.trim() && row[occurrenceIndex]?.trim() && row[occurrenceIndex] != "0" && (glqMissingOrQNF || quoteHasQNF)) {
               missing++;
             } else {
               present++;
@@ -502,7 +504,7 @@ async function mergePreviousGLQuotes(tsvContent, fileName, repo) {
       const quoteIndex = rows[0].indexOf('Quote') !== -1 ? rows[0].indexOf('Quote') : rows[0].indexOf('OrigQuote') !== -1 ? rows[0].indexOf('OrigQuote') : rows[0].indexOf('OrigWords');
       let missing = 0;
       if (glQuoteIndex >= 0) {
-        for (let i = 1; i < rows.length; i++) if (rows[i].length > 1 && (rows[i][quoteIndex]?.trim() && rows[i][occurrenceIndex]?.trim() && rows[i][occurrenceIndex] != "0" && !rows[i][glQuoteIndex]?.trim())) missing++;
+        for (let i = 1; i < rows.length; i++) if (rows[i].length > 1 && (rows[i][quoteIndex]?.trim() && rows[i][occurrenceIndex]?.trim() && rows[i][occurrenceIndex] != "0" && ((!rows[i][glQuoteIndex]?.trim() || rows[i][glQuoteIndex].includes('QUOTE_NOT_FOUND')) || rows[i][quoteIndex]?.includes('QUOTE_NOT_FOUND')))) missing++;
       }
       const totalDataRows = rows.filter(r => r.length > 1).length;
       if (argv.debug && !argv.quiet) dlog(`Book ${fileName}: artifact not available; will generate for ${missing}/${totalDataRows} rows`);
@@ -534,9 +536,11 @@ async function mergePreviousGLQuotes(tsvContent, fileName, repo) {
       const out = addEmptyGLQuoteColumns(tsvContent);
       const rows = out.split('\n').map(l => l.split('\t'));
       const glQuoteIndex = rows[0].indexOf('GLQuote');
+      const occurrenceIndex = rows[0].indexOf('Occurrence');
+      const quoteIndex = rows[0].indexOf('Quote') !== -1 ? rows[0].indexOf('Quote') : rows[0].indexOf('OrigQuote') !== -1 ? rows[0].indexOf('OrigQuote') : rows[0].indexOf('OrigWords');
       let missing = 0;
       if (glQuoteIndex >= 0) {
-        for (let i = 1; i < rows.length; i++) if (rows[i].length > 1 && (!rows[i][glQuoteIndex] || rows[i][glQuoteIndex] === '')) missing++;
+        for (let i = 1; i < rows.length; i++) if (rows[i].length > 1 && (rows[i][quoteIndex]?.trim() && rows[i][occurrenceIndex]?.trim() && rows[i][occurrenceIndex] != "0" && ((!rows[i][glQuoteIndex]?.trim() || rows[i][glQuoteIndex].includes('QUOTE_NOT_FOUND')) || rows[i][quoteIndex]?.includes('QUOTE_NOT_FOUND')))) missing++;
       }
       return { output: out, missingCount: missing };
     }
@@ -636,7 +640,11 @@ async function mergePreviousGLQuotes(tsvContent, fileName, repo) {
     if (glQuoteIdx >= 0) {
       for (let i = 1; i < mergedRows.length; i++) {
         const r = mergedRows[i];
-        if (r.length > 1 && (r[quoteIdx]?.trim() && r[occurrenceIdx]?.trim() && r[occurrenceIdx] !== "0" && !r[glQuoteIdx]?.trim())) missingCount++;
+        if (r.length > 1) {
+          const quoteHasQNF = r[quoteIdx]?.includes('QUOTE_NOT_FOUND');
+          const glqMissingOrQNF = (!r[glQuoteIdx]?.trim() || r[glQuoteIdx].includes('QUOTE_NOT_FOUND'));
+          if (r[quoteIdx]?.trim() && r[occurrenceIdx]?.trim() && r[occurrenceIdx] !== "0" && (glqMissingOrQNF || quoteHasQNF)) missingCount++;
+        }
       }
     }
 
@@ -652,9 +660,11 @@ async function mergePreviousGLQuotes(tsvContent, fileName, repo) {
     const out = addEmptyGLQuoteColumns(tsvContent);
     const rows = out.split('\n').map(l => l.split('\t'));
     const glQuoteIndex = rows[0].indexOf('GLQuote');
+    const occurrenceIndex = rows[0].indexOf('Occurrence');
+    const quoteIndex = rows[0].indexOf('Quote') !== -1 ? rows[0].indexOf('Quote') : rows[0].indexOf('OrigQuote') !== -1 ? rows[0].indexOf('OrigQuote') : rows[0].indexOf('OrigWords');
     let missing = 0;
     if (glQuoteIndex >= 0) {
-      for (let i = 1; i < rows.length; i++) if (rows[i].length > 1 && (!rows[i][glQuoteIndex] || rows[i][glQuoteIndex] === '')) missing++;
+      for (let i = 1; i < rows.length; i++) if (rows[i].length > 1 && (rows[i][quoteIndex]?.trim() && rows[i][occurrenceIndex]?.trim() && rows[i][occurrenceIndex] != "0" && ((!rows[i][glQuoteIndex]?.trim() || rows[i][glQuoteIndex].includes('QUOTE_NOT_FOUND')) || rows[i][quoteIndex]?.includes('QUOTE_NOT_FOUND')))) missing++;
     }
     const totalDataRows = rows.filter(r => r.length > 1).length;
     if (argv.debug && !argv.quiet) dlog(`Book ${fileName}: error merging previous; will generate for ${missing}/${totalDataRows}`);
@@ -703,7 +713,14 @@ function buildPartialTSVForMissing(fullTSV) {
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
     if (r.length <= 1) continue;
-    if (idx.glq >= 0 && (!r[idx.glq] || r[idx.glq] === '')) {
+    const quoteText = idx.quote >= 0 ? (r[idx.quote] || '') : '';
+    const occText = idx.occ >= 0 ? (r[idx.occ] || '') : '';
+    const glqText = idx.glq >= 0 ? (r[idx.glq] || '') : '';
+    const needs = (
+      (quoteText?.trim() && occText?.trim() && occText !== '0' && (!glqText?.trim() || glqText.includes('QUOTE_NOT_FOUND')))
+      || (quoteText.includes('QUOTE_NOT_FOUND'))
+    );
+    if (needs) {
       outRows.push(r);
       const key = makeRowKey(r, idx);
       keys.add(key);
@@ -842,6 +859,12 @@ async function main() {
         if (argv.debug && !argv.quiet) {
           dlog(`Book ${file}: pre-merge summary: cache hits=${merged.matchedCount || 0}, to-generate=${merged.missingCount}, total=${merged.totalDataRows}`);
         }
+        // Allow summary-only mode for tests (skip generation and exit after summary)
+        if (process.env.SUMMARY_ONLY === '1') {
+          // Exit right after printing the summary for deterministic tests
+          process.exit(0);
+        }
+
         // If everything is covered by previous GL quotes, skip regeneration entirely
         if (merged.missingCount === 0) {
           if (argv.verbose) log(`All rows covered by previous GL quotes for ${file}; skipping generation.`);
@@ -898,7 +921,16 @@ async function main() {
             if (idxAfter.glq >= 0) {
               for (let i = 1; i < rowsAfter.length; i++) {
                 const r = rowsAfter[i];
-                if (r.length > 1 && (!r[idxAfter.glq] || r[idxAfter.glq] === '')) missingAfter++;
+                if (r.length > 1) {
+                  const quoteText = idxAfter.quote >= 0 ? (r[idxAfter.quote] || '') : '';
+                  const occText = idxAfter.occ >= 0 ? (r[idxAfter.occ] || '') : '';
+                  const glqText = idxAfter.glq >= 0 ? (r[idxAfter.glq] || '') : '';
+                  const needs = (
+                    (quoteText?.trim() && occText?.trim() && occText !== '0' && (!glqText?.trim() || glqText.includes('QUOTE_NOT_FOUND')))
+                    || (quoteText.includes('QUOTE_NOT_FOUND'))
+                  );
+                  if (needs) missingAfter++;
+                }
               }
             }
             if (argv.debug && !argv.quiet) {
@@ -958,7 +990,16 @@ async function main() {
           if (idxAfter.glq >= 0) {
             for (let i = 1; i < rowsAfter.length; i++) {
               const r = rowsAfter[i];
-              if (r.length > 1 && (!r[idxAfter.glq] || r[idxAfter.glq] === '')) missingAfter++;
+              if (r.length > 1) {
+                const quoteText = idxAfter.quote >= 0 ? (r[idxAfter.quote] || '') : '';
+                const occText = idxAfter.occ >= 0 ? (r[idxAfter.occ] || '') : '';
+                const glqText = idxAfter.glq >= 0 ? (r[idxAfter.glq] || '') : '';
+                const needs = (
+                  (quoteText?.trim() && occText?.trim() && occText !== '0' && (!glqText?.trim() || glqText.includes('QUOTE_NOT_FOUND')))
+                  || (quoteText.includes('QUOTE_NOT_FOUND'))
+                );
+                if (needs) missingAfter++;
+              }
             }
           }
           const totalDataRows = rowsAfter.filter(r => r.length > 1).length;

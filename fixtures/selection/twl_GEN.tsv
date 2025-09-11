@@ -1,0 +1,6 @@
+Reference	ID	Tags	OrigWords	Occurrence	GLQuote	GLOccurrence	TWLink
+1:1	rowA		WORD_A	1			rc://*/tw/dict/bible/other/a
+1:2	rowB		WORD_B	1	QUOTE_NOT_FOUND		rc://*/tw/dict/bible/other/b
+1:3	rowC		QUOTE_NOT_FOUND	1	already	1	rc://*/tw/dict/bible/other/c
+1:4	rowD		WORD_D	0			rc://*/tw/dict/bible/other/d
+1:5	rowE		WORD_E	1	filled	1	rc://*/tw/dict/bible/other/e

@@ -388,26 +388,11 @@ async function getPreviousGLQuotes(fileName, repo) {
             throw new Error('Downloaded content is not a zip file (likely bot detection page)');
           }
 
-          const outerZip = await new JSZip().loadAsync(arrayBuffer);
-
-          // Check if this is a nested zip (artifact containing another zip)
-          const zipFiles = Object.keys(outerZip.files).filter(name => name.endsWith('.zip'));
-
-          if (zipFiles.length > 0) {
-            // Extract the inner zip file
-            const innerZipFile = outerZip.files[zipFiles[0]];
-            if (argv.verbose || argv.debug) console.log(`Found nested zip file: ${zipFiles[0]}, extracting...`);
-            const innerZipBuffer = await innerZipFile.async('arraybuffer');
-            const innerZip = await new JSZip().loadAsync(innerZipBuffer);
-            cache.zip = innerZip;
-            cache.zipPromise = null;
-            return innerZip;
-          } else {
-            // Use the outer zip directly
-            cache.zip = outerZip;
-            cache.zipPromise = null;
-            return outerZip;
-          }
+          const artifactZip = await new JSZip().loadAsync(arrayBuffer);
+          // Use the artifact zip directly; files are in the root directory now
+          cache.zip = artifactZip;
+          cache.zipPromise = null;
+          return artifactZip;
         } catch (err) {
           cache.zipPromise = null;
           if (argv.verbose || argv.debug) console.log(`Could not load previous GL quotes: ${err.message}`);

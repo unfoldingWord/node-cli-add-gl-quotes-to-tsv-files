@@ -72,8 +72,13 @@ const argv = yargs(hideBin(process.argv))
       describe: 'Backup artifact zip URL to use if no artifact is found via the artifacts API. Defaults to https://cdn.door43.org/dcs/<repo>_master_with_gl_quotes.zip',
       type: 'string',
     },
+    'use-backup-artifact': {
+      describe: 'Enable fallback to backup artifact URL if artifacts API fails. (default: false)',
+      type: 'boolean',
+      default: false,
+    },
     o: {
-      alias: 'output',
+      alias: 'output-zip-file',
       describe: "Output zip file's path. (default:  {workingdir}/{repo}_{ref}_with_gl_quotes.zip)",
       type: 'string',
     },
@@ -101,12 +106,12 @@ const argv = yargs(hideBin(process.argv))
       default: false,
     },
     zip: {
-      describe: 'Create a zip file with processed TSV files. If not specified, TSV files are overwritten in place.',
-      type: 'boolean',
+      describe: 'Create a zip file with processed TSV files. If not specified, TSV files are overwritten in place. Will be true if --output-zip-file is specified.',
+      type: 'string',
       default: false,
     },
     tsv: {
-      describe: 'Write TSV files back to disk (used with --zip to do both zip and TSV output).',
+      describe: 'Write TSV files back to disk (used with --zip to do both zip and TSV output). Will be true if --tsv-suffix is specified.',
       type: 'boolean',
       default: false,
     },
@@ -153,7 +158,7 @@ const repo = argv.repo || ghRepo || gitInfo.repo || path.basename(process.cwd())
 const ref = argv.ref || process.env.GITHUB_REF_NAME || gitInfo.ref || 'master';
 const dcsUrl = argv.dcs || process.env.GITHUB_SERVER_URL || gitInfo.dcsUrl || 'https://git.door43.org';
 const targetBibleLink =
-  argv.bible ||
+  (Array.isArray(argv.bible) ? argv.bible[0] : argv.bible) ||
   process.env.BIBLE_LINK ||
   getTargetBibleLink() ||
   (owner === 'unfoldingWord' ? `${owner}/${repo.split('_')[0]}_ult/master` : `${owner}/${repo.split('_')[0]}_glt/master`);
@@ -175,7 +180,7 @@ if (!owner || !repo || !ref || !dcsUrl) {
   process.exit(1);
 }
 
-const zipFilePath = argv.output || `${repo}_${ref}_with_gl_quotes.zip`;
+const zipFilePath = argv['output-zip-file'] || `${repo}_${ref}_with_gl_quotes.zip`;
 
 log('Using the following settings:\n');
 log(`Working directory: ${workingdir}`);
@@ -185,6 +190,7 @@ log(`Ref: ${ref}`);
 log(`TargetBibleLink: ${targetBibleLink}`);
 log(`DCS URL: ${dcsUrl}`);
 log(`Backup artifact URL: ${backupArtifactUrl}`);
+log('Use backup artifact:', argv['use-backup-artifact']);
 log('Quiet mode:', argv.quiet);
 log('Verbose mode:', argv.verbose);
 log('Exit on error:', argv.exitOnError);
@@ -232,7 +238,7 @@ function getTargetBibleLink() {
     }
   }
   if (!targetBible) {
-    const excludeRelations = ['/ugnt', '/uhb', '/ta', '/tn', '/twl', '/tw', '/obs', '/obs-tn', '/obs-twl', '/sn', '/sq', '/tq'];
+    const excludeRelations = ['/ugnt', '/uhb', '/ta', '/tn', '/twl', '/tw', '/obs', '/obs-tn', '/obs-twl', '/obs-tn-tsv', '/sn', '/sq', '/tq'];
     for (const relation of relations) {
       if (!excludeRelations.some((r) => relation.includes(r))) {
         targetBible = relation;
@@ -299,7 +305,8 @@ async function getPreviousGLQuotes(fileName, repo) {
       artifactMeta: null,
       zip: null,
       zipPromise: null,
-      urlPromise: null
+      urlPromise: null,
+      backupUrlFailed: false // Track if backup URL has failed
     });
 
     async function fetchArtifactZipUrl(ownerName, repoName) {
@@ -316,7 +323,7 @@ async function getPreviousGLQuotes(fileName, repo) {
         // Pick the newest artifact by highest id or latest created_at
         const candidates = artifacts.filter(a =>
           typeof a?.name === 'string' &&
-          a.name.endsWith('master_with_gl_quotes.zip') &&
+          a.name.endsWith('master_with_gl_quotes') &&
           a?.archive_download_url &&
           a?.expired === false
         );
@@ -359,13 +366,13 @@ async function getPreviousGLQuotes(fileName, repo) {
 
     // Fallback to backup artifact URL if discovery failed
     let zipUrl = cache.zipUrl;
-    if (!zipUrl) {
+    if (!zipUrl && argv['use-backup-artifact'] && !cache.backupUrlFailed) {
       if (argv.verbose || argv.debug) console.log(`No artifact URL discovered for ${repo}; falling back to backup URL: ${backupArtifactUrl}`);
       zipUrl = backupArtifactUrl;
       cache.zipUrl = zipUrl; // cache the fallback to avoid re-evaluating
     }
-    if (!zipUrl) {
-      if (argv.verbose || argv.debug) console.log(`No artifact zip URL available for repo ${repo}`);
+    if (!zipUrl || (zipUrl === backupArtifactUrl && cache.backupUrlFailed)) {
+      if (argv.verbose || argv.debug) console.log(`No artifact zip URL available for repo ${repo}${cache.backupUrlFailed ? ' (backup URL previously failed)' : ''}${!argv['use-backup-artifact'] ? ' (backup artifact disabled)' : ''}`);
       return null;
     }
 
@@ -411,6 +418,11 @@ async function getPreviousGLQuotes(fileName, repo) {
           return artifactZip;
         } catch (err) {
           cache.zipPromise = null;
+          // If this was the backup URL, mark it as failed to avoid future attempts
+          if (zipUrl === backupArtifactUrl) {
+            cache.backupUrlFailed = true;
+            if (argv.verbose || argv.debug) console.log(`Backup artifact URL failed, will not retry: ${err.message}`);
+          }
           if (argv.verbose || argv.debug) console.log(`Could not load previous GL quotes: ${err.message}`);
           return null;
         }
@@ -420,6 +432,11 @@ async function getPreviousGLQuotes(fileName, repo) {
         zipContent = await cache.zipPromise;
       } catch (err) {
         cache.zipPromise = null;
+        // If this was the backup URL, mark it as failed to avoid future attempts
+        if (zipUrl === backupArtifactUrl) {
+          cache.backupUrlFailed = true;
+          if (argv.verbose || argv.debug) console.log(`Backup artifact URL failed, will not retry: ${err.message}`);
+        }
         console.error(err.message);
         return null;
       }
@@ -830,8 +847,8 @@ async function main() {
     }
 
     // Determine output behavior based on flags
-    const shouldCreateZip = argv.zip;
-    const shouldWriteTsv = !argv.zip || argv.tsv; // Default behavior unless --zip is specified without --tsv
+    const shouldCreateZip = argv.zip || !!argv['output-zip-file']; // Default behavior if --zip or --output-zip-file is specified
+    const shouldWriteTsv = !argv.zip || argv.tsv || !!argv['tsv-suffix']; // Default behavior unless --zip is specified without --tsv
     const tsvSuffix = argv['tsv-suffix'] || '';
 
     let zip;
@@ -899,7 +916,7 @@ async function main() {
           }
 
           const partialParams = {
-            bibleLinks: [targetBibleLink],
+            bibleLinks: Array.isArray(targetBibleLink) ? targetBibleLink : [targetBibleLink],
             bookCode,
             tsvContent: partialTSV,
             isSourceLanguage: true,
@@ -908,6 +925,16 @@ async function main() {
             quiet: argv.quiet || !argv.verbose,
             usePreviousGLQuotes: !regenerateAll,
           };
+
+          // Validate partial TSV content before processing
+          if (!partialTSV || typeof partialTSV !== 'string') {
+            throw new Error(`Invalid partial TSV content for ${file}: content is not a string`);
+          }
+
+          const partialLines = partialTSV.split('\n');
+          if (partialLines.length < 2) {
+            throw new Error(`Invalid partial TSV content for ${file}: not enough lines (header + data)`);
+          }
 
           let partialResult;
           try {
@@ -966,7 +993,7 @@ async function main() {
       }
 
       const params = {
-        bibleLinks: [targetBibleLink],
+        bibleLinks: Array.isArray(targetBibleLink) ? targetBibleLink : [targetBibleLink],
         bookCode,
         tsvContent,
         isSourceLanguage: true,
@@ -978,6 +1005,16 @@ async function main() {
 
       if (argv.verbose) {
         log(params);
+      }
+
+      // Validate TSV content before processing
+      if (!tsvContent || typeof tsvContent !== 'string') {
+        throw new Error(`Invalid TSV content for ${file}: content is not a string`);
+      }
+
+      const tsvLines = tsvContent.split('\n');
+      if (tsvLines.length < 2) {
+        throw new Error(`Invalid TSV content for ${file}: not enough lines (header + data)`);
       }
 
       let result;

@@ -64,7 +64,7 @@ const argv = yargs(hideBin(process.argv))
       type: 'string',
     },
     'artifacts-base-url': {
-      describe: 'Base URL for artifacts API (e.g., https://git.door43.org or https://git.door43.org). Defaults to QA.',
+      describe: 'Base URL for artifacts API (e.g., https://git.door43.org or https://qa.door43.org). Defaults to https://git.door43.org.',
       type: 'string',
       default: 'https://git.door43.org',
     },
@@ -910,6 +910,8 @@ async function main() {
           if (argv.verbose) log(`Generating GL quotes for ${merged.missingCount}/${totalRows} rows in ${file}`);
           if (argv.debug && !argv.quiet) dlog(`Book ${file}: starting partial generation for ${merged.missingCount} rows`);
           const { partialTSV, missingKeys } = buildPartialTSVForMissing(tsvContent);
+          console.log(`Partial TSV has ${partialTSV.split('\n').length - 1} rows (of which ${missingKeys.size} are missing GL quotes)`);
+          console.log(partialTSV);
           if (argv.debug && !argv.quiet && missingKeys?.length) {
             dlog(`First missing rows (${Math.min(missingKeys.length, 10)} shown):`);
             for (const mk of missingKeys) dlog(`  - ${mk}`);

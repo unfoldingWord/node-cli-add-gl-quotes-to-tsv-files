@@ -1025,8 +1025,6 @@ async function main() {
       let result;
       try {
         result = await addGLQuoteCols(params);
-        console.log(result.output.split('\n')[0]);
-        process.exit(1);
         if (argv.debug && !argv.quiet) {
           const rowsAfter = result.output.split('\n').map(l => l.split('\t'));
           const headersAfter = rowsAfter[0];
@@ -1051,8 +1049,6 @@ async function main() {
           dlog(`Book ${file}: full generation complete; present=${totalDataRows - missingAfter}, missing=${missingAfter}, total=${totalDataRows}`);
         }
       } catch (error) {
-        console.log(error);
-        process.exit(1);
         // Handle error from addGLQuoteCols
         if (argv.exitOnError) {
           console.error(`Error processing ${file} with addGLQuoteCols:`, error.message);

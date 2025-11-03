@@ -158,10 +158,13 @@ const repo = argv.repo || ghRepo || gitInfo.repo || path.basename(process.cwd())
 const ref = argv.ref || process.env.GITHUB_REF_NAME || gitInfo.ref || 'master';
 const dcsUrl = argv.dcs || process.env.GITHUB_SERVER_URL || gitInfo.dcsUrl || 'https://git.door43.org';
 const targetBibleLink =
-  (Array.isArray(argv.bible) ? argv.bible[0] : argv.bible) ||
+  argv.bible ||
   process.env.BIBLE_LINK ||
   getTargetBibleLink() ||
   (owner === 'unfoldingWord' ? `${owner}/${repo.split('_')[0]}_ult/master` : `${owner}/${repo.split('_')[0]}_glt/master`);
+
+// Normalize to array for consistency
+const targetBibleLinks = Array.isArray(targetBibleLink) ? targetBibleLink : [targetBibleLink];
 
 // Support both --rerender and --regenerate (back-compat)
 const regenerateAll = argv['regenerate'] || argv['rerender'];
@@ -174,7 +177,7 @@ const backupArtifactUrl = (argv['backup-artifact-url'] && argv['backup-artifact-
   ? argv['backup-artifact-url']
   : `https://cdn.door43.org/dcs/${repo}_master_with_gl_quotes.zip`;
 
-log('owner:', owner, 'repo:', repo, 'ref:', ref, 'dcsUrl:', dcsUrl, 'targetBibleLink:', targetBibleLink);
+log('owner:', owner, 'repo:', repo, 'ref:', ref, 'dcsUrl:', dcsUrl, 'targetBibleLink:', targetBibleLinks);
 if (!owner || !repo || !ref || !dcsUrl) {
   console.error('Error: Missing required parameters. Use --help for usage information.');
   process.exit(1);
@@ -187,7 +190,7 @@ log(`Working directory: ${workingdir}`);
 log(`Owner: ${owner}`);
 log(`Repo: ${repo}`);
 log(`Ref: ${ref}`);
-log(`TargetBibleLink: ${targetBibleLink}`);
+log(`TargetBibleLink: ${targetBibleLinks.join(', ')}`);
 log(`DCS URL: ${dcsUrl}`);
 log(`Backup artifact URL: ${backupArtifactUrl}`);
 log('Use backup artifact:', argv['use-backup-artifact']);
@@ -918,7 +921,7 @@ async function main() {
           }
 
           const partialParams = {
-            bibleLinks: Array.isArray(targetBibleLink) ? targetBibleLink : [targetBibleLink],
+            bibleLinks: targetBibleLinks,
             bookCode,
             tsvContent: partialTSV,
             isSourceLanguage: true,
@@ -995,7 +998,7 @@ async function main() {
       }
 
       const params = {
-        bibleLinks: Array.isArray(targetBibleLink) ? targetBibleLink : [targetBibleLink],
+        bibleLinks: targetBibleLinks,
         bookCode,
         tsvContent,
         isSourceLanguage: true,
@@ -1022,6 +1025,8 @@ async function main() {
       let result;
       try {
         result = await addGLQuoteCols(params);
+        console.log(result.output.split('\n')[0]);
+        process.exit(1);
         if (argv.debug && !argv.quiet) {
           const rowsAfter = result.output.split('\n').map(l => l.split('\t'));
           const headersAfter = rowsAfter[0];
@@ -1046,6 +1051,8 @@ async function main() {
           dlog(`Book ${file}: full generation complete; present=${totalDataRows - missingAfter}, missing=${missingAfter}, total=${totalDataRows}`);
         }
       } catch (error) {
+        console.log(error);
+        process.exit(1);
         // Handle error from addGLQuoteCols
         if (argv.exitOnError) {
           console.error(`Error processing ${file} with addGLQuoteCols:`, error.message);
